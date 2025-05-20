@@ -1,337 +1,151 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>16x16 Pixel Editor</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Image to 16×16 Pixel Grid Converter</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin: 20px;
-    }
-    .canvas-group {
-      display: flex;
-      justify-content: center;
-    }
-    .y-coord {
-      writing-mode: vertical-rl;
-      transform: rotate(180deg);
-      margin-right: 2px;
-    }
-    .grid-wrapper {
-      display: flex;
-      flex-direction: column;
-    }
-    .x-coord {
-      display: flex;
-      justify-content: space-between;
-      width: 320px;
-      margin-bottom: 2px;
-    }
-    .x-coord span, .y-coord span {
-      font-size: 10px;
-      display: block;
-      width: 20px;
-      height: 20px;
-      line-height: 20px;
-    }
-    canvas {
-      border: 1px solid #000;
-      touch-action: none;
-    }
-    .btn-row {
-      margin-top: 10px;
-    }
-    button {
-      margin: 4px;
-    }
-    footer {
-      margin-top: 20px;
-      color: gray;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 640px; margin: auto; }
+    #controls { margin-bottom: 20px; text-align: center; }
+    .canvas-wrapper { position: relative; margin: 20px auto; }
+    canvas { display: block; border: 1px solid #ccc; max-width: 100%; height: auto; }
+    .label { text-align: center; font-weight: bold; margin-top: 10px; }
+    button { padding: 6px 12px; margin-top: 10px; }
+    footer { margin-top: 30px; font-size: 14px; text-align: center; color: #666; }
   </style>
 </head>
 <body>
-  <h2>16x16 Pixel Editor</h2>
+  <h2 style="text-align:center;">Image to 16×16 Pixel Grid Converter</h2>
+  <div id="controls">
+    <input type="file" id="fileInput" accept="image/*" capture>
+    <p id="errorMsg" style="color:red;"></p>
+  </div>
 
-  <div class="canvas-group">
-    <div class="y-coord" id="yCoords"></div>
-    <div class="grid-wrapper">
-      <div class="x-coord" id="xCoords"></div>
-      <canvas id="drawCanvas" width="320" height="320"></canvas>
+  <div>
+    <div class="label">原始图片</div>
+    <canvas id="origCanvas"></canvas>
+  </div>
+
+  <div>
+    <div class="label">16×16 彩色像素图（带坐标）</div>
+    <div class="canvas-wrapper">
+      <canvas id="pixelCanvas"></canvas>
     </div>
   </div>
 
-  <div class="btn-row">
-    <button onclick="clearCanvas()">清除画布</button>
-    <button onclick="invertRight()">左右反差</button>
-    <button onclick="invertBottom()">上下反差</button>
-    <button onclick="invertDiagonal()">对角反差</button>
+  <div>
+    <div class="label">16×16 黑白像素图（带坐标）</div>
+    <div class="canvas-wrapper">
+      <canvas id="bwCanvas"></canvas>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">手绘 16×16 黑白像素画</div>
+    <div class="canvas-wrapper">
+      <canvas id="drawCanvas" width="320" height="320" style="touch-action: none;"></canvas>
+    </div>
+    <div style="text-align:center;">
+      <button onclick="clearDrawCanvas()">清除画布</button>
+    </div>
   </div>
 
   <footer>
-    适用于郑州大学液晶实验<br>
+    适用于郑州大学液晶实验<br />
     <a href="https://github.com/jqwgt" target="_blank">我的 GitHub</a>
   </footer>
 
   <script>
+    const fileInput = document.getElementById('fileInput');
+    const origCanvas = document.getElementById('origCanvas');
+    const pixelCanvas = document.getElementById('pixelCanvas');
+    const bwCanvas = document.getElementById('bwCanvas');
+    const origCtx = origCanvas.getContext('2d');
+    const pixelCtx = pixelCanvas.getContext('2d');
+    const bwCtx = bwCanvas.getContext('2d');
+    const errorMsg = document.getElementById('errorMsg');
+
     const GRID = 16;
-    const SIZE = 20;
-    const canvas = document.getElementById('drawCanvas');
-    const ctx = canvas.getContext('2d');
-    let data = Array.from({ length: GRID }, () => Array(GRID).fill(0));
-    let drawing = false;
+    const MARGIN = 20;
 
-    function drawGrid() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          ctx.fillStyle = data[y][x] ? '#000' : '#fff';
-          ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
-          ctx.strokeStyle = '#ccc';
-          ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
+    fileInput.addEventListener('change', handleFile);
+
+    function handleFile(e) {
+      errorMsg.textContent = '';
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const img = new Image();
+        img.onload = () => processImage(img);
+        img.onerror = () => { errorMsg.textContent = '图片加载失败，请检查文件格式。'; };
+        img.src = evt.target.result;
+      };
+      reader.onerror = () => { errorMsg.textContent = '文件读取失败。'; };
+      reader.readAsDataURL(file);
+    }
+
+    function processImage(img) {
+      origCanvas.width = img.width;
+      origCanvas.height = img.height;
+      origCtx.clearRect(0, 0, origCanvas.width, origCanvas.height);
+      origCtx.drawImage(img, 0, 0);
+
+      const small = document.createElement('canvas');
+      small.width = GRID;
+      small.height = GRID;
+      const sCtx = small.getContext('2d');
+      sCtx.imageSmoothingEnabled = false;
+      sCtx.drawImage(img, 0, 0, GRID, GRID);
+
+      enhanceContrast(sCtx, GRID, GRID);
+      const colorData = sCtx.getImageData(0, 0, GRID, GRID);
+
+      const cellSize = Math.min((window.innerWidth - 40 - MARGIN) / GRID, 20);
+      const size = cellSize * GRID + MARGIN;
+
+      drawWithGrid(pixelCanvas, pixelCtx, colorData, cellSize, size);
+
+      // 黑白图（Floyd–Steinberg）
+      floydSteinbergBW(sCtx, GRID, GRID);
+      const bwData = sCtx.getImageData(0, 0, GRID, GRID);
+      drawWithGrid(bwCanvas, bwCtx, bwData, cellSize, size);
+    }
+
+    function enhanceContrast(ctx, width, height, factor = 1.5) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      }
+      const avg = sum / (width * height);
+
+      for (let i = 0; i < data.length; i += 4) {
+        for (let j = 0; j < 3; j++) {
+          let v = data[i + j];
+          v = avg + factor * (v - avg);
+          data[i + j] = Math.max(0, Math.min(255, v));
         }
       }
+      ctx.putImageData(imageData, 0, 0);
     }
 
-    canvas.addEventListener('pointerdown', e => {
-      drawing = true;
-      togglePixel(e);
-    });
-    canvas.addEventListener('pointermove', e => {
-      if (drawing) togglePixel(e);
-    });
-    canvas.addEventListener('pointerup', () => drawing = false);
-    canvas.addEventListener('pointerleave', () => drawing = false);
+    function floydSteinbergBW(ctx, width, height) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const getGray = (i) => 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      const grayscale = [];
 
-    function togglePixel(e) {
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / SIZE);
-      const y = Math.floor((e.clientY - rect.top) / SIZE);
-      if (x >= 0 && x < GRID && y >= 0 && y < GRID) {
-        data[y][x] = 1;
-        drawGrid();
-      }
-    }
-
-    function clearCanvas() {
-      data = Array.from({ length: GRID }, () => Array(GRID).fill(0));
-      drawGrid();
-    }
-
-    function invertRight() {
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 8; x < GRID; x++) {
-          data[y][x] = 1 - data[y][x];
+      for (let y = 0; y < height; y++) {
+        grayscale[y] = [];
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          grayscale[y][x] = getGray(idx);
         }
       }
-      drawGrid();
-    }
 
-    function invertBottom() {
-      for (let y = 8; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          data[y][x] = 1 - data[y][x];
-        }
-      }
-      drawGrid();
-    }
-
-    function invertDiagonal() {
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          if (x > y) data[y][x] = 1 - data[y][x];
-        }
-      }
-      drawGrid();
-    }
-
-    function drawCoords() {
-      const xBox = document.getElementById('xCoords');
-      const yBox = document.getElementById('yCoords');
-      for (let i = 1; i <= GRID; i++) {
-        const x = document.createElement('span');
-        x.textContent = i;
-        xBox.appendChild(x);
-
-        const y = document.createElement('span');
-        y.textContent = i;
-        yBox.appendChild(y);
-      }
-    }
-
-    // 初始化
-    drawCoords();
-    drawGrid();
-  </script>
-</body>
-</html><!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>16x16 Pixel Editor</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin: 20px;
-    }
-    .canvas-group {
-      display: flex;
-      justify-content: center;
-    }
-    .y-coord {
-      writing-mode: vertical-rl;
-      transform: rotate(180deg);
-      margin-right: 2px;
-    }
-    .grid-wrapper {
-      display: flex;
-      flex-direction: column;
-    }
-    .x-coord {
-      display: flex;
-      justify-content: space-between;
-      width: 320px;
-      margin-bottom: 2px;
-    }
-    .x-coord span, .y-coord span {
-      font-size: 10px;
-      display: block;
-      width: 20px;
-      height: 20px;
-      line-height: 20px;
-    }
-    canvas {
-      border: 1px solid #000;
-      touch-action: none;
-    }
-    .btn-row {
-      margin-top: 10px;
-    }
-    button {
-      margin: 4px;
-    }
-    footer {
-      margin-top: 20px;
-      color: gray;
-    }
-  </style>
-</head>
-<body>
-  <h2>16x16 Pixel Editor</h2>
-
-  <div class="canvas-group">
-    <div class="y-coord" id="yCoords"></div>
-    <div class="grid-wrapper">
-      <div class="x-coord" id="xCoords"></div>
-      <canvas id="drawCanvas" width="320" height="320"></canvas>
-    </div>
-  </div>
-
-  <div class="btn-row">
-    <button onclick="clearCanvas()">清除画布</button>
-    <button onclick="invertRight()">左右反差</button>
-    <button onclick="invertBottom()">上下反差</button>
-    <button onclick="invertDiagonal()">对角反差</button>
-  </div>
-
-  <footer>
-    适用于郑州大学液晶实验<br>
-    <a href="https://github.com/jqwgt" target="_blank">我的 GitHub</a>
-  </footer>
-
-  <script>
-    const GRID = 16;
-    const SIZE = 20;
-    const canvas = document.getElementById('drawCanvas');
-    const ctx = canvas.getContext('2d');
-    let data = Array.from({ length: GRID }, () => Array(GRID).fill(0));
-    let drawing = false;
-
-    function drawGrid() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          ctx.fillStyle = data[y][x] ? '#000' : '#fff';
-          ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
-          ctx.strokeStyle = '#ccc';
-          ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
-        }
-      }
-    }
-
-    canvas.addEventListener('pointerdown', e => {
-      drawing = true;
-      togglePixel(e);
-    });
-    canvas.addEventListener('pointermove', e => {
-      if (drawing) togglePixel(e);
-    });
-    canvas.addEventListener('pointerup', () => drawing = false);
-    canvas.addEventListener('pointerleave', () => drawing = false);
-
-    function togglePixel(e) {
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / SIZE);
-      const y = Math.floor((e.clientY - rect.top) / SIZE);
-      if (x >= 0 && x < GRID && y >= 0 && y < GRID) {
-        data[y][x] = 1;
-        drawGrid();
-      }
-    }
-
-    function clearCanvas() {
-      data = Array.from({ length: GRID }, () => Array(GRID).fill(0));
-      drawGrid();
-    }
-
-    function invertRight() {
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 8; x < GRID; x++) {
-          data[y][x] = 1 - data[y][x];
-        }
-      }
-      drawGrid();
-    }
-
-    function invertBottom() {
-      for (let y = 8; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          data[y][x] = 1 - data[y][x];
-        }
-      }
-      drawGrid();
-    }
-
-    function invertDiagonal() {
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          if (x > y) data[y][x] = 1 - data[y][x];
-        }
-      }
-      drawGrid();
-    }
-
-    function drawCoords() {
-      const xBox = document.getElementById('xCoords');
-      const yBox = document.getElementById('yCoords');
-      for (let i = 1; i <= GRID; i++) {
-        const x = document.createElement('span');
-        x.textContent = i;
-        xBox.appendChild(x);
-
-        const y = document.createElement('span');
-        y.textContent = i;
-        yBox.appendChild(y);
-      }
-    }
-
-    // 初始化
-    drawCoords();
-    drawGrid();
-  </script>
-</body>
-</html>
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const old = graysca
