@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Image to 16×16 Pixel Grid Converter</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 640px; margin: auto; }
     #controls { margin-bottom: 20px; text-align: center; }
     .canvas-wrapper { position: relative; margin: 20px auto; }
-    canvas { display: block; border: 1px solid #ccc; }
+    canvas { display: block; border: 1px solid #ccc; max-width: 100%; height: auto; }
     .label { text-align: center; font-weight: bold; margin-top: 10px; }
+    button { padding: 6px 12px; margin-top: 10px; }
     footer { margin-top: 30px; font-size: 14px; text-align: center; color: #666; }
   </style>
 </head>
@@ -36,6 +37,16 @@
     <div class="label">16×16 黑白像素图（带坐标）</div>
     <div class="canvas-wrapper">
       <canvas id="bwCanvas"></canvas>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">手绘 16×16 黑白像素画</div>
+    <div class="canvas-wrapper">
+      <canvas id="drawCanvas" width="320" height="320" style="touch-action: none;"></canvas>
+    </div>
+    <div style="text-align:center;">
+      <button onclick="clearDrawCanvas()">清除画布</button>
     </div>
   </div>
 
@@ -87,21 +98,78 @@
       const sCtx = small.getContext('2d');
       sCtx.imageSmoothingEnabled = false;
       sCtx.drawImage(img, 0, 0, GRID, GRID);
-      const origData = sCtx.getImageData(0, 0, GRID, GRID);
+
+      enhanceContrast(sCtx, GRID, GRID);
+      const colorData = sCtx.getImageData(0, 0, GRID, GRID);
 
       const cellSize = Math.min((window.innerWidth - 40 - MARGIN) / GRID, 20);
       const size = cellSize * GRID + MARGIN;
 
-      drawWithGrid(pixelCanvas, pixelCtx, sCtx.getImageData(0, 0, GRID, GRID), cellSize, size);
+      drawWithGrid(pixelCanvas, pixelCtx, colorData, cellSize, size);
 
-      const bwData = sCtx.createImageData(GRID, GRID);
-      for (let i = 0; i < origData.data.length; i += 4) {
-        const avg = (origData.data[i] + origData.data[i + 1] + origData.data[i + 2]) / 3;
-        const v = avg > 128 ? 255 : 0;
-        bwData.data[i] = bwData.data[i + 1] = bwData.data[i + 2] = v;
-        bwData.data[i + 3] = 255;
-      }
+      // 黑白图（Floyd–Steinberg）
+      floydSteinbergBW(sCtx, GRID, GRID);
+      const bwData = sCtx.getImageData(0, 0, GRID, GRID);
       drawWithGrid(bwCanvas, bwCtx, bwData, cellSize, size);
+    }
+
+    function enhanceContrast(ctx, width, height, factor = 1.5) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      }
+      const avg = sum / (width * height);
+
+      for (let i = 0; i < data.length; i += 4) {
+        for (let j = 0; j < 3; j++) {
+          let v = data[i + j];
+          v = avg + factor * (v - avg);
+          data[i + j] = Math.max(0, Math.min(255, v));
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function floydSteinbergBW(ctx, width, height) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const getGray = (i) => 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      const grayscale = [];
+
+      for (let y = 0; y < height; y++) {
+        grayscale[y] = [];
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          grayscale[y][x] = getGray(idx);
+        }
+      }
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const old = grayscale[y][x];
+          const newVal = old > 128 ? 255 : 0;
+          const err = old - newVal;
+          grayscale[y][x] = newVal;
+
+          if (x + 1 < width) grayscale[y][x+1] += err * 7/16;
+          if (x > 0 && y + 1 < height) grayscale[y+1][x-1] += err * 3/16;
+          if (y + 1 < height) grayscale[y+1][x] += err * 5/16;
+          if (x + 1 < width && y + 1 < height) grayscale[y+1][x+1] += err * 1/16;
+        }
+      }
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const val = grayscale[y][x] > 128 ? 255 : 0;
+          data[idx] = data[idx + 1] = data[idx + 2] = val;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
     }
 
     function drawWithGrid(canvas, ctx, imageData, cellSize, totalSize) {
@@ -121,7 +189,6 @@
       for (let i = 0; i <= GRID; i++) {
         ctx.beginPath(); ctx.moveTo(MARGIN + i * cellSize, MARGIN);
         ctx.lineTo(MARGIN + i * cellSize, MARGIN + cellSize * GRID); ctx.stroke();
-
         ctx.beginPath(); ctx.moveTo(MARGIN, MARGIN + i * cellSize);
         ctx.lineTo(MARGIN + cellSize * GRID, MARGIN + i * cellSize); ctx.stroke();
       }
@@ -134,12 +201,69 @@
       for (let x = 0; x < GRID; x++) {
         ctx.fillText(x + 1, MARGIN + x * cellSize + cellSize / 2, MARGIN / 2);
       }
-
       ctx.textAlign = 'right';
       for (let y = 0; y < GRID; y++) {
         ctx.fillText(y + 1, MARGIN / 2, MARGIN + y * cellSize + cellSize / 2);
       }
     }
+
+    // === 手绘功能 ===
+    const drawCanvas = document.getElementById('drawCanvas');
+    const drawCtx = drawCanvas.getContext('2d');
+    const drawGrid = 16;
+    let drawPixelSize = drawCanvas.width / drawGrid;
+    let drawData = Array.from({ length: drawGrid }, () => Array(drawGrid).fill(0));
+
+    function drawDrawCanvas() {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      for (let y = 0; y < drawGrid; y++) {
+        for (let x = 0; x < drawGrid; x++) {
+          drawCtx.fillStyle = drawData[y][x] ? '#000' : '#fff';
+          drawCtx.fillRect(x * drawPixelSize, y * drawPixelSize, drawPixelSize, drawPixelSize);
+        }
+      }
+
+      drawCtx.strokeStyle = '#aaa';
+      for (let i = 0; i <= drawGrid; i++) {
+        drawCtx.beginPath();
+        drawCtx.moveTo(i * drawPixelSize, 0);
+        drawCtx.lineTo(i * drawPixelSize, drawCanvas.height);
+        drawCtx.stroke();
+
+        drawCtx.beginPath();
+        drawCtx.moveTo(0, i * drawPixelSize);
+        drawCtx.lineTo(drawCanvas.width, i * drawPixelSize);
+        drawCtx.stroke();
+      }
+    }
+
+    function clearDrawCanvas() {
+      drawData = Array.from({ length: drawGrid }, () => Array(drawGrid).fill(0));
+      drawDrawCanvas();
+    }
+
+    let drawing = false;
+    drawCanvas.addEventListener('pointerdown', e => {
+      drawing = true;
+      toggleDrawPixel(e);
+    });
+    drawCanvas.addEventListener('pointermove', e => {
+      if (drawing) toggleDrawPixel(e);
+    });
+    drawCanvas.addEventListener('pointerup', () => drawing = false);
+    drawCanvas.addEventListener('pointerleave', () => drawing = false);
+
+    function toggleDrawPixel(e) {
+      const rect = drawCanvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / drawPixelSize);
+      const y = Math.floor((e.clientY - rect.top) / drawPixelSize);
+      if (x >= 0 && x < drawGrid && y >= 0 && y < drawGrid) {
+        drawData[y][x] = 1;
+        drawDrawCanvas();
+      }
+    }
+
+    drawDrawCanvas();
   </script>
 </body>
 </html>
