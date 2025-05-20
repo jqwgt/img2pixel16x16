@@ -3,51 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Image to 16×16 Pixel Grid Converter</title>
+  <title>Pixel Editor & Image Converter</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; max-width: 640px; margin: auto; }
-    #controls { margin-bottom: 20px; text-align: center; }
     .canvas-wrapper { position: relative; margin: 20px auto; }
-    canvas { display: block; border: 1px solid #ccc; max-width: 100%; height: auto; }
+    canvas { border: 1px solid #ccc; display: block; margin: auto; touch-action: none; }
     .label { text-align: center; font-weight: bold; margin-top: 10px; }
-    button { padding: 6px 12px; margin-top: 10px; }
+    .btn-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 10px; }
+    button { padding: 6px 12px; font-size: 14px; }
     footer { margin-top: 30px; font-size: 14px; text-align: center; color: #666; }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center;">Image to 16×16 Pixel Grid Converter</h2>
-  <div id="controls">
-    <input type="file" id="fileInput" accept="image/*" capture>
-    <p id="errorMsg" style="color:red;"></p>
-  </div>
+  <h2 style="text-align:center;">16×16 Pixel Editor & Converter</h2>
 
-  <div>
-    <div class="label">原始图片</div>
-    <canvas id="origCanvas"></canvas>
-  </div>
-
-  <div>
-    <div class="label">16×16 彩色像素图（带坐标）</div>
-    <div class="canvas-wrapper">
-      <canvas id="pixelCanvas"></canvas>
+  <div class="label">手绘 16×16 黑白像素画（含坐标）</div>
+  <div class="canvas-wrapper" style="display: flex; flex-direction: row; justify-content: center; gap: 4px;">
+    <canvas id="yCoordCanvas" width="20" height="320"></canvas>
+    <div style="display:flex; flex-direction: column;">
+      <canvas id="xCoordCanvas" width="320" height="20"></canvas>
+      <canvas id="drawCanvas" width="320" height="320"></canvas>
     </div>
   </div>
 
-  <div>
-    <div class="label">16×16 黑白像素图（带坐标）</div>
-    <div class="canvas-wrapper">
-      <canvas id="bwCanvas"></canvas>
-    </div>
-  </div>
-
-  <div>
-    <div class="label">手绘 16×16 黑白像素画</div>
-    <div class="canvas-wrapper">
-      <canvas id="drawCanvas" width="320" height="320" style="touch-action: none;"></canvas>
-    </div>
-    <div style="text-align:center;">
-      <button onclick="clearDrawCanvas()">清除画布</button>
-    </div>
+  <div class="btn-row">
+    <button onclick="clearDrawCanvas()">清除画布</button>
+    <button onclick="invertRightHalf()">左右反差</button>
+    <button onclick="invertBottomHalf()">上下反差</button>
+    <button onclick="invertDiagonal()">对角线反差</button>
   </div>
 
   <footer>
@@ -56,214 +39,104 @@
   </footer>
 
   <script>
-    const fileInput = document.getElementById('fileInput');
-    const origCanvas = document.getElementById('origCanvas');
-    const pixelCanvas = document.getElementById('pixelCanvas');
-    const bwCanvas = document.getElementById('bwCanvas');
-    const origCtx = origCanvas.getContext('2d');
-    const pixelCtx = pixelCanvas.getContext('2d');
-    const bwCtx = bwCanvas.getContext('2d');
-    const errorMsg = document.getElementById('errorMsg');
-
     const GRID = 16;
-    const MARGIN = 20;
-
-    fileInput.addEventListener('change', handleFile);
-
-    function handleFile(e) {
-      errorMsg.textContent = '';
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        const img = new Image();
-        img.onload = () => processImage(img);
-        img.onerror = () => { errorMsg.textContent = '图片加载失败，请检查文件格式。'; };
-        img.src = evt.target.result;
-      };
-      reader.onerror = () => { errorMsg.textContent = '文件读取失败。'; };
-      reader.readAsDataURL(file);
-    }
-
-    function processImage(img) {
-      origCanvas.width = img.width;
-      origCanvas.height = img.height;
-      origCtx.clearRect(0, 0, origCanvas.width, origCanvas.height);
-      origCtx.drawImage(img, 0, 0);
-
-      const small = document.createElement('canvas');
-      small.width = GRID;
-      small.height = GRID;
-      const sCtx = small.getContext('2d');
-      sCtx.imageSmoothingEnabled = false;
-      sCtx.drawImage(img, 0, 0, GRID, GRID);
-
-      enhanceContrast(sCtx, GRID, GRID);
-      const colorData = sCtx.getImageData(0, 0, GRID, GRID);
-
-      const cellSize = Math.min((window.innerWidth - 40 - MARGIN) / GRID, 20);
-      const size = cellSize * GRID + MARGIN;
-
-      drawWithGrid(pixelCanvas, pixelCtx, colorData, cellSize, size);
-
-      // 黑白图（Floyd–Steinberg）
-      floydSteinbergBW(sCtx, GRID, GRID);
-      const bwData = sCtx.getImageData(0, 0, GRID, GRID);
-      drawWithGrid(bwCanvas, bwCtx, bwData, cellSize, size);
-    }
-
-    function enhanceContrast(ctx, width, height, factor = 1.5) {
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      let sum = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-      }
-      const avg = sum / (width * height);
-
-      for (let i = 0; i < data.length; i += 4) {
-        for (let j = 0; j < 3; j++) {
-          let v = data[i + j];
-          v = avg + factor * (v - avg);
-          data[i + j] = Math.max(0, Math.min(255, v));
-        }
-      }
-      ctx.putImageData(imageData, 0, 0);
-    }
-
-    function floydSteinbergBW(ctx, width, height) {
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      const getGray = (i) => 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-      const grayscale = [];
-
-      for (let y = 0; y < height; y++) {
-        grayscale[y] = [];
-        for (let x = 0; x < width; x++) {
-          const idx = (y * width + x) * 4;
-          grayscale[y][x] = getGray(idx);
-        }
-      }
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const old = grayscale[y][x];
-          const newVal = old > 128 ? 255 : 0;
-          const err = old - newVal;
-          grayscale[y][x] = newVal;
-
-          if (x + 1 < width) grayscale[y][x+1] += err * 7/16;
-          if (x > 0 && y + 1 < height) grayscale[y+1][x-1] += err * 3/16;
-          if (y + 1 < height) grayscale[y+1][x] += err * 5/16;
-          if (x + 1 < width && y + 1 < height) grayscale[y+1][x+1] += err * 1/16;
-        }
-      }
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const idx = (y * width + x) * 4;
-          const val = grayscale[y][x] > 128 ? 255 : 0;
-          data[idx] = data[idx + 1] = data[idx + 2] = val;
-          data[idx + 3] = 255;
-        }
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-    }
-
-    function drawWithGrid(canvas, ctx, imageData, cellSize, totalSize) {
-      canvas.width = totalSize + MARGIN;
-      canvas.height = totalSize + MARGIN;
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      const tmp = document.createElement('canvas');
-      tmp.width = imageData.width;
-      tmp.height = imageData.height;
-      tmp.getContext('2d').putImageData(imageData, 0, 0);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tmp, 0, 0, GRID, GRID, MARGIN, MARGIN, cellSize * GRID, cellSize * GRID);
-
-      ctx.strokeStyle = '#ccc';
-      for (let i = 0; i <= GRID; i++) {
-        ctx.beginPath(); ctx.moveTo(MARGIN + i * cellSize, MARGIN);
-        ctx.lineTo(MARGIN + i * cellSize, MARGIN + cellSize * GRID); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(MARGIN, MARGIN + i * cellSize);
-        ctx.lineTo(MARGIN + cellSize * GRID, MARGIN + i * cellSize); ctx.stroke();
-      }
-
-      ctx.fillStyle = '#000';
-      ctx.font = '12px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      for (let x = 0; x < GRID; x++) {
-        ctx.fillText(x + 1, MARGIN + x * cellSize + cellSize / 2, MARGIN / 2);
-      }
-      ctx.textAlign = 'right';
-      for (let y = 0; y < GRID; y++) {
-        ctx.fillText(y + 1, MARGIN / 2, MARGIN + y * cellSize + cellSize / 2);
-      }
-    }
-
-    // === 手绘功能 ===
     const drawCanvas = document.getElementById('drawCanvas');
     const drawCtx = drawCanvas.getContext('2d');
-    const drawGrid = 16;
-    let drawPixelSize = drawCanvas.width / drawGrid;
-    let drawData = Array.from({ length: drawGrid }, () => Array(drawGrid).fill(0));
+    const xCoordCanvas = document.getElementById('xCoordCanvas');
+    const xCoordCtx = xCoordCanvas.getContext('2d');
+    const yCoordCanvas = document.getElementById('yCoordCanvas');
+    const yCoordCtx = yCoordCanvas.getContext('2d');
+    const cellSize = drawCanvas.width / GRID;
 
-    function drawDrawCanvas() {
+    let drawData = Array.from({ length: GRID }, () => Array(GRID).fill(0));
+    let drawing = false;
+
+    drawCanvas.addEventListener('pointerdown', e => {
+      drawing = true;
+      togglePixel(e);
+    });
+    drawCanvas.addEventListener('pointermove', e => {
+      if (drawing) togglePixel(e);
+    });
+    drawCanvas.addEventListener('pointerup', () => drawing = false);
+    drawCanvas.addEventListener('pointerleave', () => drawing = false);
+
+    function togglePixel(e) {
+      const rect = drawCanvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / cellSize);
+      const y = Math.floor((e.clientY - rect.top) / cellSize);
+      if (x >= 0 && x < GRID && y >= 0 && y < GRID) {
+        drawData[y][x] = 1;
+        drawCanvasUpdate();
+      }
+    }
+
+    function drawCanvasUpdate() {
       drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-      for (let y = 0; y < drawGrid; y++) {
-        for (let x = 0; x < drawGrid; x++) {
+      for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
           drawCtx.fillStyle = drawData[y][x] ? '#000' : '#fff';
-          drawCtx.fillRect(x * drawPixelSize, y * drawPixelSize, drawPixelSize, drawPixelSize);
+          drawCtx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
         }
       }
-
-      drawCtx.strokeStyle = '#aaa';
-      for (let i = 0; i <= drawGrid; i++) {
+      drawCtx.strokeStyle = '#999';
+      for (let i = 0; i <= GRID; i++) {
         drawCtx.beginPath();
-        drawCtx.moveTo(i * drawPixelSize, 0);
-        drawCtx.lineTo(i * drawPixelSize, drawCanvas.height);
+        drawCtx.moveTo(i * cellSize, 0);
+        drawCtx.lineTo(i * cellSize, drawCanvas.height);
         drawCtx.stroke();
 
         drawCtx.beginPath();
-        drawCtx.moveTo(0, i * drawPixelSize);
-        drawCtx.lineTo(drawCanvas.width, i * drawPixelSize);
+        drawCtx.moveTo(0, i * cellSize);
+        drawCtx.lineTo(drawCanvas.width, i * cellSize);
         drawCtx.stroke();
       }
     }
 
     function clearDrawCanvas() {
-      drawData = Array.from({ length: drawGrid }, () => Array(drawGrid).fill(0));
-      drawDrawCanvas();
+      drawData = Array.from({ length: GRID }, () => Array(GRID).fill(0));
+      drawCanvasUpdate();
     }
 
-    let drawing = false;
-    drawCanvas.addEventListener('pointerdown', e => {
-      drawing = true;
-      toggleDrawPixel(e);
-    });
-    drawCanvas.addEventListener('pointermove', e => {
-      if (drawing) toggleDrawPixel(e);
-    });
-    drawCanvas.addEventListener('pointerup', () => drawing = false);
-    drawCanvas.addEventListener('pointerleave', () => drawing = false);
+    function drawCoordinates() {
+      xCoordCtx.clearRect(0, 0, xCoordCanvas.width, xCoordCanvas.height);
+      xCoordCtx.font = '12px Arial';
+      xCoordCtx.textAlign = 'center';
+      xCoordCtx.fillStyle = '#000';
+      for (let i = 0; i < GRID; i++) {
+        xCoordCtx.fillText(i + 1, i * cellSize + cellSize / 2, 15);
+      }
 
-    function toggleDrawPixel(e) {
-      const rect = drawCanvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / drawPixelSize);
-      const y = Math.floor((e.clientY - rect.top) / drawPixelSize);
-      if (x >= 0 && x < drawGrid && y >= 0 && y < drawGrid) {
-        drawData[y][x] = 1;
-        drawDrawCanvas();
+      yCoordCtx.clearRect(0, 0, yCoordCanvas.width, yCoordCanvas.height);
+      yCoordCtx.font = '12px Arial';
+      yCoordCtx.textAlign = 'right';
+      yCoordCtx.fillStyle = '#000';
+      for (let i = 0; i < GRID; i++) {
+        yCoordCtx.fillText(i + 1, 18, i * cellSize + cellSize / 2 + 3);
       }
     }
 
-    drawDrawCanvas();
-  </script>
-</body>
-</html>
+    // 反差函数
+    function invertRightHalf() {
+      for (let y = 0; y < GRID; y++) {
+        for (let x = GRID / 2; x < GRID; x++) {
+          drawData[y][x] = 1 - drawData[y][x];
+        }
+      }
+      drawCanvasUpdate();
+    }
+
+    function invertBottomHalf() {
+      for (let y = GRID / 2; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+          drawData[y][x] = 1 - drawData[y][x];
+        }
+      }
+      drawCanvasUpdate();
+    }
+
+    function invertDiagonal() {
+      for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+          if (x > y) drawData[y][x] = 1 - drawData[y][x];
+  
