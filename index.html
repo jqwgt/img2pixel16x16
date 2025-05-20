@@ -1,41 +1,50 @@
-<!DOCTYPE html><html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>图片16×16像素转换器</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Image to 16×16 Pixel Grid Converter</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
     #controls { margin-bottom: 20px; text-align: center; }
     .canvas-wrapper { position: relative; margin: 20px auto; }
-    canvas { display: block; }
+    canvas { display: block; border: 1px solid #ccc; }
     .label { text-align: center; font-weight: bold; margin-top: 10px; }
     footer { margin-top: 30px; font-size: 14px; text-align: center; color: #666; }
-    @media (min-width: 600px) {
-      body { max-width: none; display: flex; flex-direction: column; align-items: center; }
-    }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center;">图片16×16像素转换器</h2>
+  <h2 style="text-align:center;">Image to 16×16 Pixel Grid Converter</h2>
   <div id="controls">
-    <input type="file" id="fileInput" accept="image/*">
-  </div>  <div>
+    <input type="file" id="fileInput" accept="image/*" capture>
+    <p id="errorMsg" style="color:red;"></p>
+  </div>
+
+  <div>
     <div class="label">原始图片</div>
     <canvas id="origCanvas"></canvas>
-  </div>  <div>
+  </div>
+
+  <div>
     <div class="label">16×16 彩色像素图（带坐标）</div>
     <div class="canvas-wrapper">
       <canvas id="pixelCanvas"></canvas>
     </div>
-  </div>  <div>
+  </div>
+
+  <div>
     <div class="label">16×16 黑白像素图（带坐标）</div>
     <div class="canvas-wrapper">
       <canvas id="bwCanvas"></canvas>
     </div>
-  </div>  <footer>
-    适用于郑州大学液晶实验<br>
+  </div>
+
+  <footer>
+    适用于郑州大学液晶实验<br />
     <a href="https://github.com/jqwgt" target="_blank">我的 GitHub</a>
-  </footer>  <script>
+  </footer>
+
+  <script>
     const fileInput = document.getElementById('fileInput');
     const origCanvas = document.getElementById('origCanvas');
     const pixelCanvas = document.getElementById('pixelCanvas');
@@ -43,31 +52,35 @@
     const origCtx = origCanvas.getContext('2d');
     const pixelCtx = pixelCanvas.getContext('2d');
     const bwCtx = bwCanvas.getContext('2d');
+    const errorMsg = document.getElementById('errorMsg');
+
     const GRID = 16;
     const MARGIN = 20;
 
     fileInput.addEventListener('change', handleFile);
 
     function handleFile(e) {
+      errorMsg.textContent = '';
       const file = e.target.files[0];
       if (!file) return;
+
       const reader = new FileReader();
       reader.onload = function(evt) {
         const img = new Image();
         img.onload = () => processImage(img);
+        img.onerror = () => { errorMsg.textContent = '图片加载失败，请检查文件格式。'; };
         img.src = evt.target.result;
       };
+      reader.onerror = () => { errorMsg.textContent = '文件读取失败。'; };
       reader.readAsDataURL(file);
     }
 
     function processImage(img) {
-      // 原图
       origCanvas.width = img.width;
       origCanvas.height = img.height;
       origCtx.clearRect(0, 0, origCanvas.width, origCanvas.height);
       origCtx.drawImage(img, 0, 0);
 
-      // 临时 16x16
       const small = document.createElement('canvas');
       small.width = GRID;
       small.height = GRID;
@@ -76,57 +89,57 @@
       sCtx.drawImage(img, 0, 0, GRID, GRID);
       const origData = sCtx.getImageData(0, 0, GRID, GRID);
 
-      // 计算画布尺寸
       const cellSize = Math.min((window.innerWidth - 40 - MARGIN) / GRID, 20);
       const size = cellSize * GRID + MARGIN;
 
-      // 彩色图
       drawWithGrid(pixelCanvas, pixelCtx, sCtx.getImageData(0, 0, GRID, GRID), cellSize, size);
-      // 黑白图
-      // 生成黑白数据
+
       const bwData = sCtx.createImageData(GRID, GRID);
       for (let i = 0; i < origData.data.length; i += 4) {
-        const avg = (origData.data[i] + origData.data[i+1] + origData.data[i+2]) / 3;
+        const avg = (origData.data[i] + origData.data[i + 1] + origData.data[i + 2]) / 3;
         const v = avg > 128 ? 255 : 0;
-        bwData.data[i] = bwData.data[i+1] = bwData.data[i+2] = v;
-        bwData.data[i+3] = 255;
+        bwData.data[i] = bwData.data[i + 1] = bwData.data[i + 2] = v;
+        bwData.data[i + 3] = 255;
       }
-      const bwCanvasTemp = document.createElement('canvas');
-      bwCanvasTemp.width = GRID;
-      bwCanvasTemp.height = GRID;
-      bwCanvasTemp.getContext('2d').putImageData(bwData, 0, 0);
       drawWithGrid(bwCanvas, bwCtx, bwData, cellSize, size);
     }
 
     function drawWithGrid(canvas, ctx, imageData, cellSize, totalSize) {
       canvas.width = totalSize + MARGIN;
       canvas.height = totalSize + MARGIN;
-      // 白底
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // 绘像素
+
       const tmp = document.createElement('canvas');
       tmp.width = imageData.width;
       tmp.height = imageData.height;
       tmp.getContext('2d').putImageData(imageData, 0, 0);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(tmp, 0, 0, GRID, GRID, MARGIN, MARGIN, cellSize * GRID, cellSize * GRID);
-      // 网格
+
       ctx.strokeStyle = '#ccc';
       for (let i = 0; i <= GRID; i++) {
-        // 垂直
-        ctx.beginPath(); ctx.moveTo(MARGIN + i*cellSize, MARGIN); ctx.lineTo(MARGIN + i*cellSize, MARGIN + cellSize*GRID); ctx.stroke();
-        // 水平
-        ctx.beginPath(); ctx.moveTo(MARGIN, MARGIN + i*cellSize); ctx.lineTo(MARGIN + cellSize*GRID, MARGIN + i*cellSize); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(MARGIN + i * cellSize, MARGIN);
+        ctx.lineTo(MARGIN + i * cellSize, MARGIN + cellSize * GRID); ctx.stroke();
+
+        ctx.beginPath(); ctx.moveTo(MARGIN, MARGIN + i * cellSize);
+        ctx.lineTo(MARGIN + cellSize * GRID, MARGIN + i * cellSize); ctx.stroke();
       }
-      // 坐标
-      ctx.fillStyle = '#000'; ctx.font = '12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+      ctx.fillStyle = '#000';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
       for (let x = 0; x < GRID; x++) {
-        ctx.fillText(x+1, MARGIN + x*cellSize + cellSize/2, MARGIN/2);
+        ctx.fillText(x + 1, MARGIN + x * cellSize + cellSize / 2, MARGIN / 2);
       }
+
       ctx.textAlign = 'right';
       for (let y = 0; y < GRID; y++) {
-        ctx.fillText(y+1, MARGIN/2, MARGIN + y*cellSize + cellSize/2);
+        ctx.fillText(y + 1, MARGIN / 2, MARGIN + y * cellSize + cellSize / 2);
       }
     }
-  </scr
+  </script>
+</body>
+</html>
